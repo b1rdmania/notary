@@ -173,12 +173,14 @@ export interface SignatureChecker {
 
 /**
  * The exact message that is signed for a sealed receipt: the seal's core with
- * the signature and keyId stripped from the payload (you cannot sign your own
- * signature). Signer and verifier must build this identically.
+ * the ENTIRE payload, minus the signature and keyId (you cannot sign your own
+ * signature). Covering the whole payload — not just the commitment fields —
+ * means any extra or altered field in a sealed receipt invalidates the
+ * signature. Signer and verifier build this identically.
  */
 export function sealSigningMessage(
   core: Omit<AuditCore, "payload">,
-  commitment: SealCommitment,
+  payloadWithoutSignature: Record<string, unknown>,
 ): string {
   return canonicalJSON({
     seq: core.seq,
@@ -186,7 +188,7 @@ export function sealSigningMessage(
     runId: core.runId,
     event: core.event,
     skill: core.skill,
-    payload: commitment,
+    payload: payloadWithoutSignature,
     prevHash: core.prevHash,
   });
 }
@@ -276,35 +278,32 @@ function checkSeal(
   entries: AuditEntry[],
   verifier: SignatureChecker,
 ): string | null {
-  const p = entry.payload as Record<string, unknown>;
-  const signature = p.signature;
-  const keyId = p.keyId;
+  const { signature, keyId, ...signedPayload } = entry.payload as Record<string, unknown>;
   if (typeof signature !== "string" || typeof keyId !== "string") {
     return "sealed receipt is missing its signature (was it produced by an older notary?)";
   }
   if (keyId !== verifier.keyId) {
     return `sealed receipt was signed by key ${keyId} but verified against ${verifier.keyId} (wrong key)`;
   }
-  const commitment: SealCommitment = {
-    status: String(p.status ?? ""),
-    runCount: Number(p.runCount),
-    runFinalSeq: Number(p.runFinalSeq),
-    runHeadHash: String(p.runHeadHash ?? ""),
-  };
-  // The committed values must match what is actually in the chain.
-  if (commitment.runFinalSeq !== entry.seq) {
+
+  // The signature covers the WHOLE payload (minus signature/keyId), so any added
+  // or altered field — not just the committed four — invalidates it.
+  const message = sealSigningMessage(entry, signedPayload);
+  if (!verifier.verify(message, signature)) {
+    return "invalid signature (the receipt was forged or altered after signing)";
+  }
+
+  // Defence-in-depth: the committed values must also match the actual chain, so
+  // a mismatch gives a precise diagnosis rather than a bare signature failure.
+  if (Number(signedPayload.runFinalSeq) !== entry.seq) {
     return "sealed receipt's committed seq does not match its position";
   }
-  if (commitment.runHeadHash !== entry.prevHash) {
+  if (String(signedPayload.runHeadHash ?? "") !== entry.prevHash) {
     return "sealed receipt's committed head does not match the chain (an entry was added or removed before the seal)";
   }
   const actualRunCount = entries.filter((e) => e.runId === entry.runId).length;
-  if (commitment.runCount !== actualRunCount) {
-    return `sealed receipt committed to ${commitment.runCount} entries but ${actualRunCount} are present (entries added or removed)`;
-  }
-  const message = sealSigningMessage(entry, commitment);
-  if (!verifier.verify(message, signature)) {
-    return "invalid signature (the receipt was forged or altered after signing)";
+  if (Number(signedPayload.runCount) !== actualRunCount) {
+    return `sealed receipt committed to ${signedPayload.runCount} entries but ${actualRunCount} are present (entries added or removed)`;
   }
   return null;
 }

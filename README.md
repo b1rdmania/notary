@@ -1,6 +1,6 @@
 # notary
 
-**A black-box recorder and approval gate for any Claude skill. Signed, tamper-evident, human-approved execution receipts. Drop-in MCP server, no infra, under 1,000 lines.**
+**A black-box recorder and approval gate for any Claude skill. Signed, tamper-evident, human-approved execution receipts. Drop-in MCP server, no infra, under 1,500 lines.**
 
 You let a Claude skill touch your files, your tools, your customers. Can you prove what it was *allowed* to do, that a human *approved* it, and that the record of what happened hasn't been edited after the fact?
 

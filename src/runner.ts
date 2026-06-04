@@ -195,9 +195,12 @@ function finish(
     runFinalSeq: head.seq,
     runHeadHash: head.prevHash,
   };
+  // The signed payload is exactly what gets stored, minus the signature/keyId
+  // that are added afterwards — so the signature covers every committed field.
+  const payload: Record<string, unknown> = { ...commitment };
   const message = sealSigningMessage(
     { seq: head.seq, ts: tsNow, runId, event: "receipt.sealed", skill, prevHash: head.prevHash },
-    commitment,
+    payload,
   );
   const signature = signer.sign(message);
 
@@ -206,7 +209,7 @@ function finish(
     runId,
     event: "receipt.sealed",
     skill,
-    payload: { ...commitment, signature, keyId: signer.keyId },
+    payload: { ...payload, signature, keyId: signer.keyId },
   });
 
   const receipt = extractReceipt(readEntries(auditFile), runId);

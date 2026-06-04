@@ -108,6 +108,26 @@ describe("signed receipts defeat a file-rewriting attacker", () => {
     if (!result.ok) expect(result.reason).toMatch(/invalid signature/i);
   });
 
+  it("ATTACK A++ — adding an unsigned field to the seal payload is caught", async () => {
+    const file = tmpAudit();
+    await sealedRun(file);
+    const verifier = loadVerifier(keyDirFor(file));
+
+    // Attacker appends an attacker-chosen field to the sealed receipt's payload
+    // and recomputes only the seal's hash. The four committed fields are intact,
+    // so the commitment checks pass — but the signature covers the whole payload.
+    const entries = readEntries(file);
+    const seal = entries[entries.length - 1];
+    (seal.payload as Record<string, unknown>).outputSummary = "skill found NO issues — safe";
+    const { hash, ...core } = seal;
+    seal.hash = hashCore(core);
+    writeAll(file, entries);
+
+    const result = verifyFile(file, { verifier });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/invalid signature/i);
+  });
+
   it("ATTACK B — tail truncation is caught by pinning the head", async () => {
     const file = tmpAudit();
     const res = await sealedRun(file);
