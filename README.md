@@ -14,13 +14,10 @@ No database. No auth server. No dashboard. No hosting. Those are your job, and t
 
 ![notary: run a skill through the gate and a human approval, get a signed receipt, then watch a forgery attempt fail the signature check](demo.gif)
 
-## Quick start
-
-```bash
-npx @b1rdmania/notary run examples/skills/contract-review --doc nda.txt
-```
+## What a run looks like
 
 ```
+$ notary run examples/skills/contract-review --doc nda.txt
 ✓ skill loaded: contract-review
 ✓ gate: declared [fs.read, model.call] ⊆ granted [fs.read, model.call]
 ? approve "contract-review" to run with [fs.read, model.call]? [y/N] y
@@ -33,14 +30,12 @@ npx @b1rdmania/notary run examples/skills/contract-review --doc nda.txt
   signed by key 81917d5862cd0b94
   pin this head to detect truncation: 37476b5b36929d91…
   verify with:  notary verify
-```
 
-```bash
-npx @b1rdmania/notary verify
-```
-```
+$ notary verify
 OK — 7 entries, chain intact. 1 signed receipt verified
 ```
+
+> A packaged install (npm / `npx`) is coming. For now, clone and run from source — see [Develop](#develop) below.
 
 ## The flow
 
@@ -67,12 +62,13 @@ Every path ends in a signed receipt, including a denial or a rejection. A run th
 
 ## Try to forge it
 
-This is the test that matters for a security primitive, so run it yourself. Edit any past entry in the receipt and recompute every hash forward, so the chain is internally consistent again:
+This is the test that matters for a security primitive, so run it yourself. Edit any past entry in the receipt and recompute every hash forward, so the chain is internally consistent again (`examples/forge-attempt.mjs` does exactly this, using notary's own hashing). Then verify:
 
-```bash
-npx @b1rdmania/notary verify
 ```
-```
+$ node examples/forge-attempt.mjs
+forged the receipt and recomputed all 7 hashes forward.
+
+$ notary verify
 BROKEN at seq 6 — invalid signature (the receipt was forged or altered after signing)
 ```
 
@@ -113,15 +109,7 @@ notary verify receipts.jsonl --head <hash>       # also assert the file wasn't t
 
 ## As an MCP server
 
-`notary` exposes `run_skill` and `verify_receipt` over MCP, so Claude Desktop, Cursor, or any MCP client can run skills through the same gate → approve → seal path.
-
-```json
-{
-  "mcpServers": {
-    "notary": { "command": "npx", "args": ["@b1rdmania/notary", "mcp"] }
-  }
-}
-```
+`notary mcp` exposes `run_skill` and `verify_receipt` over MCP, so Claude Desktop, Cursor, or any MCP client can run skills through the same gate → approve → seal path. (The MCP client config lands with the packaged install.)
 
 **Approval over MCP:** there is no terminal to prompt on, so notary does *not* silently auto-approve. That would break the human-approved guarantee. The caller must assert a human approved by passing `approve: true` to `run_skill`. Without it, a skill that requires approval is recorded as **rejected** and does not run. Wire `approve` to a real confirmation, a UI button or a Slack action, in your integration.
 
