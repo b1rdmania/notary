@@ -10,7 +10,9 @@ Point it at a skill folder. It checks the skill's declared permissions against w
 
 No database. No auth server. No dashboard. No hosting. Those are your job, and that is the point. notary works for any Claude skill; legal is where the receipt matters most.
 
-> **Audit the skill, then notarise the run.** [skill-auditor](https://github.com/b1rdmania/claude-skill-auditor) scores a skill's quality and dependency risk before you trust it. `notary` proves what it was allowed to do, and that a human approved it, every time it runs.
+> **Audit quality → audit security → notarise execution.** [skill-auditor](https://github.com/b1rdmania/claude-skill-auditor) checks whether a skill is any good; [skill-security-audit](https://github.com/b1rdmania/skill-security-audit) checks whether it is safe to run; `notary` proves what it was allowed to do, and that a human approved it, every time it runs.
+
+![notary: run a skill through the gate and a human approval, get a signed receipt, then watch a forgery attempt fail the signature check](demo.gif)
 
 ## Quick start
 
