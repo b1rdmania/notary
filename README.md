@@ -35,7 +35,7 @@ $ notary verify
 OK — 7 entries, chain intact. 1 signed receipt verified
 ```
 
-> A packaged install (npm / `npx`) is coming. For now, clone and run from source — see [Develop](#develop) below.
+> Clone and run from source — see [Develop](#develop) below.
 
 ## The flow
 
