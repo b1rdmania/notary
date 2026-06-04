@@ -18,6 +18,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "npm run build && npm test",
     "dev": "tsx src/cli.ts",
     "mcp": "tsx src/mcp.ts",
     "test": "vitest run",
