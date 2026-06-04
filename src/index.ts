@@ -12,10 +12,28 @@ export {
   extractReceipt,
   canonicalJSON,
   hashCore,
+  sealSigningMessage,
   sha256,
   GENESIS,
 } from "./audit.js";
-export type { AuditEntry, AuditCore, AuditEvent, VerifyResult } from "./audit.js";
+export type {
+  AuditEntry,
+  AuditCore,
+  AuditEvent,
+  VerifyResult,
+  VerifyOptions,
+  SealCommitment,
+  SignatureChecker,
+} from "./audit.js";
+
+export {
+  loadOrCreateSigner,
+  loadVerifier,
+  verifierFrom,
+  keyIdOf,
+  keyDirFor,
+} from "./signing.js";
+export type { Signer, SigVerifier } from "./signing.js";
 
 export { cliApprove, autoApprove, autoReject } from "./approval.js";
 export type { ApprovalHook, ApprovalRequest, ApprovalDecision } from "./approval.js";

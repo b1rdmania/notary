@@ -1,7 +1,10 @@
 {
-  "name": "notary",
+  "name": "@b1rdmania/notary",
   "version": "0.1.0",
-  "description": "A black-box recorder and approval gate for any Claude skill. Tamper-evident, human-approved execution receipts. Drop-in MCP server, no infra.",
+  "description": "A black-box recorder and approval gate for any Claude skill. Signed, tamper-evident, human-approved execution receipts. Drop-in MCP server, no infra.",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "notary": "./dist/cli.js"

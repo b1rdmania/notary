@@ -1,12 +1,20 @@
 import { randomUUID } from "node:crypto";
-import { AuditLog, extractReceipt, readEntries, sha256 } from "./audit.js";
-import type { AuditEntry } from "./audit.js";
+import {
+  AuditLog,
+  extractReceipt,
+  readEntries,
+  sealSigningMessage,
+  sha256,
+} from "./audit.js";
+import type { AuditEntry, SealCommitment } from "./audit.js";
 import { checkGate } from "./gate.js";
 import { loadSkill } from "./skill.js";
 import type { ApprovalHook } from "./approval.js";
 import { cliApprove } from "./approval.js";
 import type { ModelRunner } from "./model.js";
 import { anthropicRunner } from "./model.js";
+import type { Signer } from "./signing.js";
+import { keyDirFor, loadOrCreateSigner } from "./signing.js";
 
 /**
  * The core. Walks a single skill through the five steps — load, gate, approve,
@@ -29,6 +37,8 @@ export interface RunOptions {
   requireApproval?: boolean;
   /** Model runner. Defaults to the Anthropic SDK. */
   model?: ModelRunner;
+  /** Ed25519 signer for sealing receipts. Defaults to a local key beside the audit file. */
+  signer?: Signer;
   /** Clock, injectable for deterministic tests. */
   now?: () => Date;
   /** Run id generator, injectable for deterministic tests. */
@@ -53,6 +63,8 @@ export async function runSkill(opts: RunOptions): Promise<RunResult> {
   const newRunId = opts.newRunId ?? (() => randomUUID());
   const approvalHook = opts.approvalHook ?? cliApprove;
   const model = opts.model ?? anthropicRunner;
+  const signer =
+    opts.signer ?? loadOrCreateSigner(keyDirFor(opts.auditFile), (m) => console.error(`notary: ${m}`));
 
   const runId = newRunId();
   const log = new AuditLog(opts.auditFile, opts.onEvent);
@@ -89,7 +101,7 @@ export async function runSkill(opts: RunOptions): Promise<RunResult> {
     },
   });
   if (!gate.allowed) {
-    return finish("denied", runId, skillName, log, opts.auditFile, ts, undefined);
+    return finish("denied", runId, skillName, log, opts.auditFile, ts, signer, undefined);
   }
 
   // 3. Approve
@@ -116,7 +128,7 @@ export async function runSkill(opts: RunOptions): Promise<RunResult> {
       payload: { approved: decision.approved, by: decision.by, reason: decision.reason ?? "" },
     });
     if (!decision.approved) {
-      return finish("rejected", runId, skillName, log, opts.auditFile, ts, undefined);
+      return finish("rejected", runId, skillName, log, opts.auditFile, ts, signer, undefined);
     }
   }
 
@@ -140,7 +152,7 @@ export async function runSkill(opts: RunOptions): Promise<RunResult> {
       skill: skillName,
       payload: { error: message },
     });
-    return finish("failed", runId, skillName, log, opts.auditFile, ts, undefined);
+    return finish("failed", runId, skillName, log, opts.auditFile, ts, signer, undefined);
   }
   log.append({
     ts: ts(),
@@ -155,9 +167,14 @@ export async function runSkill(opts: RunOptions): Promise<RunResult> {
   });
 
   // 5. Receipt
-  return finish("completed", runId, skillName, log, opts.auditFile, ts, result.text);
+  return finish("completed", runId, skillName, log, opts.auditFile, ts, signer, result.text);
 }
 
+/**
+ * Seal the run with a signed receipt. The signature commits to the run's final
+ * seq, its entry count, and the chain head at seal time — so the sealed receipt
+ * cannot be forged, reordered, or have entries added/removed without the key.
+ */
 function finish(
   status: RunStatus,
   runId: string,
@@ -165,15 +182,33 @@ function finish(
   log: AuditLog,
   auditFile: string,
   ts: () => string,
+  signer: Signer,
   output: string | undefined,
 ): RunResult {
+  const head = log.currentHead();
+  const tsNow = ts();
+  const runCountBeforeSeal = readEntries(auditFile).filter((e) => e.runId === runId).length;
+
+  const commitment: SealCommitment = {
+    status,
+    runCount: runCountBeforeSeal + 1, // includes this seal entry
+    runFinalSeq: head.seq,
+    runHeadHash: head.prevHash,
+  };
+  const message = sealSigningMessage(
+    { seq: head.seq, ts: tsNow, runId, event: "receipt.sealed", skill, prevHash: head.prevHash },
+    commitment,
+  );
+  const signature = signer.sign(message);
+
   log.append({
-    ts: ts(),
+    ts: tsNow,
     runId,
     event: "receipt.sealed",
     skill,
-    payload: { status },
+    payload: { ...commitment, signature, keyId: signer.keyId },
   });
+
   const receipt = extractReceipt(readEntries(auditFile), runId);
   return { status, runId, skill, output, receipt };
 }

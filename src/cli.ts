@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { runSkill } from "./runner.js";
 import { autoApprove, cliApprove } from "./approval.js";
 import { verifyFile } from "./audit.js";
+import { keyDirFor, loadVerifier } from "./signing.js";
 import { runMcpServer } from "./mcp.js";
 
 /**
@@ -85,8 +86,16 @@ async function cmdRun(args: string[]): Promise<number> {
     } else if (e.event === "run.started") {
       console.log(C.dim("… running …"));
     } else if (e.event === "run.finished") {
-      const p = e.payload as { model: string; usage: { inputTokens: number; outputTokens: number } };
-      console.log(C.dim(`ran with ${p.model} (${p.usage.inputTokens}+${p.usage.outputTokens} tokens)`));
+      const p = e.payload as {
+        model?: string;
+        usage?: { inputTokens: number; outputTokens: number };
+        error?: string;
+      };
+      if (p.error) {
+        console.log(C.bad(`run errored: ${p.error}`));
+      } else if (p.usage) {
+        console.log(C.dim(`ran with ${p.model} (${p.usage.inputTokens}+${p.usage.outputTokens} tokens)`));
+      }
     }
   };
 
@@ -109,22 +118,38 @@ async function cmdRun(args: string[]): Promise<number> {
     console.log(C.bad(`run failed: ${err}`));
   }
 
+  const head = res.receipt.entries.at(-1)?.hash ?? "";
+  const sealPayload = res.receipt.entries.at(-1)?.payload as { keyId?: string } | undefined;
   console.log(
     C.ok(
-      `receipt sealed: ${res.receipt.entries.length} entries → ${auditFile}`,
+      `receipt sealed & signed: ${res.receipt.entries.length} entries → ${auditFile}`,
     ),
   );
-  console.log(C.dim(`  verify with:  notary verify ${auditFile === DEFAULT_AUDIT ? "" : auditFile}`.trimEnd()));
+  if (sealPayload?.keyId) console.log(C.dim(`  signed by key ${sealPayload.keyId}`));
+  console.log(C.dim(`  pin this head to detect truncation: ${head.slice(0, 16)}…`));
+  const target = auditFile === DEFAULT_AUDIT ? "" : ` ${auditFile}`;
+  console.log(C.dim(`  verify with:  notary verify${target}`));
 
   return res.status === "completed" ? 0 : 1;
 }
 
 function cmdVerify(args: string[]): number {
-  const { positional } = parseFlags(args);
+  const { positional, flags } = parseFlags(args);
   const file = positional[0] ?? DEFAULT_AUDIT;
-  const result = verifyFile(file);
+  const verifier = loadVerifier(
+    keyDirFor(file),
+    typeof flags.pubkey === "string" ? flags.pubkey : undefined,
+  );
+  const expectedHead = typeof flags.head === "string" ? flags.head : undefined;
+  const result = verifyFile(file, { verifier, expectedHead });
   if (result.ok) {
-    console.log(C.ok(`OK — ${result.count} entries, chain intact.`));
+    const sig = result.signaturesChecked
+      ? `${result.sealsVerified} signed receipt${result.sealsVerified === 1 ? "" : "s"} verified`
+      : C.dim("no public key found — structural check only, signatures NOT verified");
+    console.log(C.ok(`OK — ${result.count} entries, chain intact. ${sig}`));
+    if (!result.signaturesChecked) {
+      console.log(C.dim("  provide a key with --pubkey <base64> or a notary.pub beside the receipts to prove signatures."));
+    }
     return 0;
   }
   console.log(C.bad(`BROKEN at seq ${result.brokenSeq} — ${result.reason}`));
@@ -136,12 +161,16 @@ function usage(): void {
 
 usage:
   notary run <skill-dir> [--doc <file>] [--input <text>] [--grant a,b] [--yes] [--audit <file>]
-  notary verify [<receipts-file>]
+  notary verify [<receipts-file>] [--pubkey <base64>] [--head <hash>]
   notary mcp
 
 defaults:
   --grant   ${DEFAULT_GRANT.join(",")}
-  --audit   ${DEFAULT_AUDIT}`);
+  --audit   ${DEFAULT_AUDIT}
+
+receipts are Ed25519-signed. verify checks signatures against the notary.pub
+beside the receipts (or --pubkey). pin a run's printed head with --head to
+detect tail truncation.`);
 }
 
 async function main(): Promise<number> {

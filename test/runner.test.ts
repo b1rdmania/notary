@@ -7,7 +7,14 @@ import { dirname, resolve } from "node:path";
 import { runSkill } from "../src/runner.js";
 import { autoApprove, autoReject } from "../src/approval.js";
 import { verifyFile } from "../src/audit.js";
+import { keyDirFor, loadVerifier } from "../src/signing.js";
 import type { ModelRunner } from "../src/model.js";
+
+/** Structural + signature verification through the default key beside the file. */
+function fullyVerified(auditFile: string): boolean {
+  const result = verifyFile(auditFile, { verifier: loadVerifier(keyDirFor(auditFile)) });
+  return result.ok && result.signaturesChecked && result.sealsVerified === 1;
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILLS = resolve(HERE, "..", "examples", "skills");
@@ -53,7 +60,7 @@ describe("runSkill", () => {
       "run.finished",
       "receipt.sealed",
     ]);
-    expect(verifyFile(auditFile).ok).toBe(true);
+    expect(fullyVerified(auditFile)).toBe(true);
   });
 
   it("denies a skill that over-reaches its granted capabilities", async () => {
@@ -72,7 +79,7 @@ describe("runSkill", () => {
     const events = res.receipt.entries.map((e) => e.event);
     expect(events).toContain("gate.checked");
     expect(events).not.toContain("run.started");
-    expect(verifyFile(auditFile).ok).toBe(true);
+    expect(fullyVerified(auditFile)).toBe(true);
   });
 
   it("records a rejection when approval is refused and never runs", async () => {
@@ -90,7 +97,7 @@ describe("runSkill", () => {
     const events = res.receipt.entries.map((e) => e.event);
     expect(events).toContain("approval.decided");
     expect(events).not.toContain("run.started");
-    expect(verifyFile(auditFile).ok).toBe(true);
+    expect(fullyVerified(auditFile)).toBe(true);
   });
 
   it("seals a verifiable receipt even when the model call fails", async () => {
@@ -112,7 +119,7 @@ describe("runSkill", () => {
     expect((finished?.payload as { error: string }).error).toContain("model exploded");
     // The chain is intact and sealed despite the failure.
     expect(res.receipt.entries.at(-1)?.event).toBe("receipt.sealed");
-    expect(verifyFile(auditFile).ok).toBe(true);
+    expect(fullyVerified(auditFile)).toBe(true);
   });
 
   it("skips approval for a skill that does not require it", async () => {
